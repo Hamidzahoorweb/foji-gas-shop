@@ -1,4 +1,4 @@
-// ===== FOJI GAS — APP (v2) =====
+// ===== FOJI GAS — APP v3 =====
 
 const App = {
   currentPage: 'dashboard',
@@ -9,6 +9,7 @@ const App = {
     this.bindModal();
     this.bindMenuToggle();
     this.navigate('dashboard');
+    this.initSyncBadge();
   },
 
   setDate() {
@@ -47,14 +48,16 @@ const App = {
     const titles = {
       dashboard: 'Dashboard', stock: 'Cylinder Stock', sales: 'LPG Sales',
       parts: 'Parts Sales', expenses: 'Expenses', prevmonth: 'Previous Month Entry',
-      reports: 'Reports & Analytics', history: 'Transaction History'
+      reports: 'Reports & Analytics', history: 'Transaction History',
+      cylinders: 'Cylinder Inventory', sync: 'Cloud Sync'
     };
     document.getElementById('pageTitle').textContent = titles[page] || page;
     const renderers = {
       dashboard: () => this.renderDashboard(), stock: () => this.renderStock(),
       sales: () => this.renderSales(), parts: () => this.renderParts(),
       expenses: () => this.renderExpenses(), prevmonth: () => this.renderPrevMonth(),
-      reports: () => this.renderReports(), history: () => this.renderHistory()
+      reports: () => this.renderReports(), history: () => this.renderHistory(),
+      cylinders: () => this.renderCylinders(), sync: () => this.renderSync()
     };
     if (renderers[page]) renderers[page]();
   },
@@ -71,6 +74,21 @@ const App = {
   },
 
   setContent(html) { document.getElementById('content').innerHTML = html; },
+
+  // ======================== SYNC BADGE ========================
+  initSyncBadge() {
+    const code = DB.Sync.getSyncCode();
+    const badge = document.getElementById('syncBadge');
+    if (!badge) return;
+    if (code) {
+      badge.textContent = '☁ Synced';
+      badge.className = 'sync-badge synced';
+    } else {
+      badge.textContent = '☁ Sync';
+      badge.className = 'sync-badge';
+    }
+    badge.onclick = () => this.navigate('sync');
+  },
 
   // ======================== DASHBOARD ========================
   renderDashboard() {
@@ -225,7 +243,7 @@ const App = {
     const combined = [...sales.map(r=>({...r,_type:'LPG'})),...parts.map(r=>({...r,_type:'Parts'}))]
       .sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,8);
     if (!combined.length) return `<div class="empty-state"><div class="empty-icon">📭</div>No transactions yet. Start by adding a sale!</div>`;
-    return `<div class="table-wrap"><table>
+    return `<div class="table-wrap" style="overflow-x:auto"><table>
       <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Qty(kg)</th><th>Revenue</th><th>Profit</th><th>₨/kg</th></tr></thead>
       <tbody>${combined.map(r=>{
         const profit=(r.amount||0)-(r.cost||0);
@@ -249,7 +267,10 @@ const App = {
     this.setContent(`
       <div class="section-header">
         <div class="section-title">Current Stock</div>
-        <button class="btn btn-primary" onclick="App.openStockForm()">✏️ Update Stock</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="App.navigate('cylinders')">🛢️ Cylinder List</button>
+          <button class="btn btn-primary" onclick="App.openStockForm()">✏️ Update Stock</button>
+        </div>
       </div>
       <div class="stats-grid" style="margin-bottom:28px">
         <div class="stat-card" style="--accent:var(--flame)">
@@ -268,7 +289,7 @@ const App = {
         </div>
       </div>
       <div class="section-header"><div class="section-title">Stock Update History</div></div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Date</th><th>12kg</th><th>45kg</th><th>Gas (kg)</th><th>Notes</th><th>Actions</th></tr></thead>
         <tbody>${logs.length?logs.map(l=>`
           <tr>
@@ -344,7 +365,6 @@ const App = {
       notes: document.getElementById('sl_notes').value,
     };
     localStorage.setItem('fg_stock_logs', JSON.stringify(logs));
-    // Also update current stock to latest log values
     const latest = logs[0];
     DB.Stock.update({ cyl_12kg: latest.cyl_12kg, cyl_45kg: latest.cyl_45kg, gas_kg: latest.gas_kg });
     this.closeModal();
@@ -355,13 +375,129 @@ const App = {
     if (!confirm('Delete this stock log entry?')) return;
     const logs = DB.Stock.getLogs().filter(r => r.id !== id);
     localStorage.setItem('fg_stock_logs', JSON.stringify(logs));
-    // Update current stock to latest remaining log
     if (logs.length) {
       const latest = logs[0];
       DB.Stock.update({ cyl_12kg: latest.cyl_12kg, cyl_45kg: latest.cyl_45kg, gas_kg: latest.gas_kg });
     }
     this.navigate('stock');
     this.showAlert('Stock log deleted.', 'error');
+  },
+
+  // ======================== CYLINDER INVENTORY (NEW) ========================
+  renderCylinders() {
+    const cyls12 = DB.Cylinders.getByType('12kg');
+    const cyls45 = DB.Cylinders.getByType('45kg');
+    const all = DB.Cylinders.getAll();
+
+    const makeCylCards = (list, type) => {
+      if (!list.length) return `<div class="empty-state" style="padding:20px;grid-column:1/-1"><div class="empty-icon">${type==='12kg'?'🛢️':'⛽'}</div>No ${type} cylinders in stock</div>`;
+      return list.map(c => `
+        <div class="cyl-card">
+          <button class="cyl-delete" onclick="App.deleteCylinder('${c.id}')" title="Remove from inventory">✕</button>
+          <div class="cyl-icon">${type==='12kg'?'🛢️':'⛽'}</div>
+          <div class="cyl-id">${c.number || c.id.slice(-4).toUpperCase()}</div>
+          <div class="cyl-type">${type}</div>
+          ${c.notes ? `<div style="font-size:10px;color:var(--silver-dim);margin-top:4px">${c.notes}</div>` : ''}
+          <button class="btn btn-danger btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="App.sellCylinder('${c.id}')">💰 Sold</button>
+        </div>
+      `).join('');
+    };
+
+    this.setContent(`
+      <div class="section-header">
+        <div class="section-title">Cylinder Inventory</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="App.openAddCylinder('12kg')">➕ Add 12kg</button>
+          <button class="btn btn-primary btn-sm" onclick="App.openAddCylinder('45kg')">➕ Add 45kg</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:20px">
+        <div class="stat-card" style="--accent:var(--flame)">
+          <div class="stat-label">12kg In Stock</div><div class="stat-value">${cyls12.length}</div><div class="stat-unit">cylinders</div><div class="stat-icon">🛢️</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--yellow)">
+          <div class="stat-label">45kg In Stock</div><div class="stat-value">${cyls45.length}</div><div class="stat-unit">cylinders</div><div class="stat-icon">⛽</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--green)">
+          <div class="stat-label">Total Cylinders</div><div class="stat-value">${all.length}</div><div class="stat-unit">all sizes</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--silver-dim)">
+          <div class="stat-label">Gas Stock (kg)</div><div class="stat-value">${DB.fmt(DB.Stock.getOrInit().gas_kg)}</div><div class="stat-unit">kilograms</div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-bottom:12px">🛢️ 12kg Cylinders (${cyls12.length})</div>
+      <div class="cyl-grid" style="margin-bottom:28px">
+        ${makeCylCards(cyls12, '12kg')}
+      </div>
+
+      <div class="section-title" style="margin-bottom:12px">⛽ 45kg Cylinders (${cyls45.length})</div>
+      <div class="cyl-grid">
+        ${makeCylCards(cyls45, '45kg')}
+      </div>
+
+      <div style="margin-top:20px;padding:14px 18px;background:rgba(255,107,0,0.07);border:1px solid rgba(255,107,0,0.2);border-radius:10px;font-size:13px;color:var(--silver-dim)">
+        💡 <strong style="color:var(--white)">Tip:</strong> Press <strong style="color:var(--flame)">💰 Sold</strong> on a cylinder to remove it from your inventory when you sell it to a customer. The count updates automatically.
+      </div>
+    `);
+  },
+
+  openAddCylinder(defaultType) {
+    this.openModal('Add Cylinder to Inventory', `
+      <div class="form-grid">
+        <div class="form-group"><label>Cylinder Type</label>
+          <select id="cyl_type">
+            <option value="12kg" ${defaultType==='12kg'?'selected':''}>12 kg</option>
+            <option value="45kg" ${defaultType==='45kg'?'selected':''}>45 kg</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Cylinder Number / ID</label>
+          <input type="text" id="cyl_number" placeholder="e.g. CYL-001 or 1234" autofocus>
+        </div>
+        <div class="form-group"><label>Notes (Optional)</label>
+          <input type="text" id="cyl_notes" placeholder="e.g. New, Refurbished">
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:12px;color:var(--silver-dim)">
+        Adding a cylinder will increase your stock count automatically.
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="App.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="App.saveAddCylinder()">➕ Add Cylinder</button>
+      </div>
+    `);
+  },
+
+  saveAddCylinder() {
+    const type = document.getElementById('cyl_type').value;
+    const number = document.getElementById('cyl_number').value.trim();
+    const notes = document.getElementById('cyl_notes').value.trim();
+    if (!number) { alert('Enter a cylinder number/ID'); return; }
+    const result = DB.Cylinders.add({ type, number, notes });
+    if (!result) { alert(`A ${type} cylinder with number "${number}" already exists!`); return; }
+    this.closeModal();
+    this.showAlert(`${type} cylinder "${number}" added!`, 'success');
+  },
+
+  sellCylinder(id) {
+    const all = DB.Cylinders.getAll();
+    const cyl = all.find(c => c.id === id);
+    if (!cyl) return;
+    if (!confirm(`Mark cylinder "${cyl.number}" (${cyl.type}) as SOLD and remove from inventory?`)) return;
+    DB.Cylinders.sell(id);
+    this.navigate('cylinders');
+    this.showAlert(`Cylinder "${cyl.number}" sold & removed from stock!`, 'success');
+  },
+
+  deleteCylinder(id) {
+    const all = DB.Cylinders.getAll();
+    const cyl = all.find(c => c.id === id);
+    if (!cyl) return;
+    if (!confirm(`Remove cylinder "${cyl.number}" from inventory? (Use this only if added by mistake)`)) return;
+    DB.Cylinders.delete(id);
+    this.navigate('cylinders');
+    this.showAlert(`Cylinder removed.`, 'error');
   },
 
   // ======================== LPG SALES ========================
@@ -373,10 +509,14 @@ const App = {
     const todayAmt=DB.sum(todaySales,'amount'),todayKg=DB.sum(todaySales,'qty_kg'),todayCost=DB.sum(todaySales,'cost');
     const todayProfit=todayAmt-todayCost, todayPPK=todayKg>0?todayProfit/todayKg:0;
     const monthAmt=DB.sum(monthSales,'amount'),monthKg=DB.sum(monthSales,'qty_kg');
+    const stock=DB.Stock.getOrInit();
     this.setContent(`
       <div class="section-header">
         <div class="section-title">LPG Sales</div>
         <button class="btn btn-primary" onclick="App.openSaleForm()">➕ Add Sale</button>
+      </div>
+      <div style="background:rgba(0,196,140,0.07);border:1px solid rgba(0,196,140,0.2);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:var(--silver-dim)">
+        ⚡ Gas stock auto-updates when you record a sale. Current stock: <strong style="color:var(--green)">${DB.fmt(stock.gas_kg)} kg</strong>
       </div>
       <div class="stats-grid" style="margin-bottom:24px">
         <div class="stat-card" style="--accent:var(--flame)"><div class="stat-label">Today KG Sold</div><div class="stat-value">${DB.fmt(todayKg)}</div><div class="stat-unit">kg</div></div>
@@ -386,7 +526,7 @@ const App = {
         <div class="stat-card" style="--accent:var(--flame)"><div class="stat-label">Monthly Revenue</div><div class="stat-value">₨${DB.fmt(monthAmt)}</div></div>
         <div class="stat-card" style="--accent:var(--silver-dim)"><div class="stat-label">Total Records</div><div class="stat-value">${all.length}</div></div>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Qty(kg)</th><th>Buy ₨/kg</th><th>Sell ₨/kg</th><th>Cost</th><th>Revenue</th><th>Profit</th><th>₨/kg</th><th>Actions</th></tr></thead>
         <tbody>${all.length?all.slice(0,60).map(r=>{
           const profit=(r.amount||0)-(r.cost||0),perKg=r.qty_kg>0?profit/r.qty_kg:0;
@@ -406,9 +546,11 @@ const App = {
 
   openSaleForm(id=null) {
     let rec={}; if(id) rec=DB.Sales.getAll().find(r=>r.id===id)||{};
+    const stock=DB.Stock.getOrInit();
     this.openModal(id?'Edit LPG Sale':'Add LPG Sale',`
       <div style="background:rgba(255,107,0,0.08);border:1px solid rgba(255,107,0,0.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--silver-dim)">
-        💡 Enter Buy Price + Sell Price + Quantity → Revenue & Cost auto-calculate
+        💡 Enter Buy Price + Sell Price + Quantity → Revenue & Cost auto-calculate.
+        Gas stock (${DB.fmt(stock.gas_kg)} kg) will auto-deduct on save.
       </div>
       <div class="form-grid">
         <div class="form-group"><label>Date</label><input type="date" id="sale_date" value="${rec.date||DB.today()}"></div>
@@ -469,11 +611,16 @@ const App = {
     };
     if(!kg && !data.amount){alert('Enter quantity');return;}
     if(id) DB.Sales.update(id,data); else DB.Sales.add(data);
-    this.closeModal(); this.showAlert('Sale saved!','success');
+    this.closeModal();
+    this.showAlert('Sale saved! Gas stock updated automatically.','success');
   },
 
   deleteSale(id) {
-    if(confirm('Delete this sale?')){DB.Sales.delete(id);this.navigate('sales');}
+    if(confirm('Delete this sale? Gas stock will be restored.')){
+      DB.Sales.delete(id);
+      this.navigate('sales');
+      this.showAlert('Sale deleted. Gas stock restored.', 'error');
+    }
   },
 
   // ======================== PARTS ========================
@@ -495,7 +642,7 @@ const App = {
         <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-label">Monthly Revenue</div><div class="stat-value">₨${DB.fmt(monthAmt)}</div></div>
         <div class="stat-card" style="--accent:var(--flame)"><div class="stat-label">Total Records</div><div class="stat-value">${all.length}</div></div>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Qty</th><th>Buy ₨</th><th>Sell ₨</th><th>Cost</th><th>Revenue</th><th>Profit</th><th>Actions</th></tr></thead>
         <tbody>${all.length?all.slice(0,60).map(r=>{
           const profit=(r.amount||0)-(r.cost||0);
@@ -601,7 +748,7 @@ const App = {
         <div class="stat-card" style="--accent:var(--red)"><div class="stat-label">Monthly</div><div class="stat-value">₨${DB.fmt(monthAmt)}</div></div>
         <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-label">Records</div><div class="stat-value">${all.length}</div></div>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount (₨)</th><th>Actions</th></tr></thead>
         <tbody>${all.length?all.slice(0,60).map(r=>`
           <tr>
@@ -674,7 +821,7 @@ const App = {
         <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total LPG</div><div class="stat-value">₨${DB.fmt(DB.sum(all,'lpg_turnover'))}</div></div>
         <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total Parts</div><div class="stat-value">₨${DB.fmt(DB.sum(all,'parts_turnover'))}</div></div>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Month</th><th>LPG Revenue</th><th>KG Sold</th><th>₨/kg Profit</th><th>Parts</th><th>Expenses</th><th>Net Profit</th><th>Total</th><th>Notes</th><th>Actions</th></tr></thead>
         <tbody>${all.length?all.map(r=>{
           const net=(r.lpg_turnover||0)+(r.parts_turnover||0)-(r.expenses||0)-(r.lpg_cost||0)-(r.parts_cost||0);
@@ -816,7 +963,7 @@ const App = {
         <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Year Net Profit</div><div class="stat-value" style="color:${yNet>=0?'var(--green)':'var(--red)'}">₨${DB.fmt(yNet)}</div></div>
       </div>
       <div class="section-header"><div class="section-title">Monthly Breakdown — ${year}</div></div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Month</th><th>Gas KG</th><th>LPG Sales</th><th>Parts</th><th>Total</th><th>Expenses</th><th>₨/kg</th><th>Net Profit</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="8" class="empty-state">No data</td></tr>'}</tbody>
       </table></div>
@@ -834,7 +981,7 @@ const App = {
         <div class="section-title">All Transactions</div>
         <span style="color:var(--silver-dim);font-size:13px">${all.length} records</span>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap" style="overflow-x:auto"><table>
         <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Qty(kg)</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>₨/kg</th></tr></thead>
         <tbody>${all.length?all.map(r=>{
           const profit=(r.amount||0)-(r.cost||0);
@@ -852,13 +999,125 @@ const App = {
     `);
   },
 
+  // ======================== CLOUD SYNC PAGE ========================
+  renderSync() {
+    const code = DB.Sync.getSyncCode();
+    const lastSync = DB.Sync.getLastSync();
+    const lastSyncStr = lastSync ? new Date(lastSync).toLocaleString('en-PK') : 'Never';
+    this.setContent(`
+      <div class="section-title" style="margin-bottom:6px">☁ Cloud Sync — Use on Multiple Devices</div>
+      <p style="color:var(--silver-dim);font-size:13px;margin-bottom:24px">
+        Sync your data across your phone, tablet, and computer for free. No account needed.
+      </p>
+
+      <div class="stats-grid" style="margin-bottom:24px">
+        <div class="stat-card" style="--accent:var(--yellow)">
+          <div class="stat-label">Sync Status</div>
+          <div class="stat-value" style="font-size:20px">${code ? '✅ Active' : '⬜ Not Set'}</div>
+          <div class="stat-unit">${code ? 'Connected to cloud' : 'Setup required'}</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--green)">
+          <div class="stat-label">Last Sync</div>
+          <div class="stat-value" style="font-size:16px">${lastSync ? lastSyncStr.split(',')[0] : '—'}</div>
+          <div class="stat-unit">${lastSync ? lastSyncStr.split(',')[1]||'' : 'Never synced'}</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--flame)">
+          <div class="stat-label">Your Sync Code</div>
+          <div class="stat-value" style="font-size:14px;word-break:break-all">${code ? code.slice(0,8)+'...' : 'None'}</div>
+          <div class="stat-unit">Save this code!</div>
+        </div>
+        <div class="stat-card" style="--accent:var(--silver-dim)">
+          <div class="stat-label">Records</div>
+          <div class="stat-value">${DB.Sales.getAll().length + DB.Parts.getAll().length + DB.Expenses.getAll().length}</div>
+          <div class="stat-unit">total transactions</div>
+        </div>
+      </div>
+
+      <!-- HOW TO USE -->
+      <div style="background:rgba(255,214,0,0.06);border:1px solid rgba(255,214,0,0.15);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="font-weight:700;color:var(--yellow);margin-bottom:12px;font-size:14px">📖 How to Sync Between Devices</div>
+        <div style="font-size:13px;color:var(--silver-dim);line-height:2">
+          <strong style="color:var(--white)">Step 1 — First Device (Main Device):</strong><br>
+          Press <strong style="color:var(--flame)">"Push to Cloud"</strong> below. This saves all your data online and gives you a Sync Code.<br><br>
+          <strong style="color:var(--white)">Step 2 — Other Devices:</strong><br>
+          Open the app on your other device (phone/tablet), go to Cloud Sync, enter the Sync Code, and press <strong style="color:var(--green)">"Pull from Cloud"</strong>.<br><br>
+          <strong style="color:var(--white)">Step 3 — Keep Updated:</strong><br>
+          Any time you add data on one device, push to cloud. Then pull on the other device to get the latest data.
+        </div>
+      </div>
+
+      <!-- PUSH -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">📤 Push — Save My Data to Cloud</div>
+        <p style="font-size:13px;color:var(--silver-dim);margin-bottom:16px">Uploads all your local data to the cloud. First push creates your Sync Code.</p>
+        <button class="btn btn-primary" id="pushBtn" onclick="App.doSync('push')">📤 Push to Cloud</button>
+        ${code ? `<div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--silver-dim);margin-bottom:6px">Your Sync Code (save this!):</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="sync-code">${code}</div>
+            <button class="btn btn-ghost btn-sm" onclick="App.copySyncCode()">📋 Copy</button>
+          </div>
+        </div>` : ''}
+      </div>
+
+      <!-- PULL -->
+      <div class="panel">
+        <div class="panel-title">📥 Pull — Load Data from Cloud</div>
+        <p style="font-size:13px;color:var(--silver-dim);margin-bottom:16px">Enter your Sync Code from another device to download all data here.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="flex:1;min-width:200px">
+            <label>Sync Code</label>
+            <input type="text" id="pull_code" placeholder="Paste sync code here..." value="${code||''}">
+          </div>
+          <button class="btn btn-success" onclick="App.doSync('pull')">📥 Pull from Cloud</button>
+        </div>
+        <div style="margin-top:12px;padding:10px 14px;background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.2);border-radius:8px;font-size:12px;color:var(--red)">
+          ⚠️ Pulling will OVERWRITE all local data on this device with the cloud data.
+        </div>
+      </div>
+    `);
+  },
+
+  async doSync(direction) {
+    const badge = document.getElementById('syncBadge');
+    if (badge) { badge.textContent = '☁ Syncing...'; badge.className = 'sync-badge syncing'; }
+
+    try {
+      if (direction === 'push') {
+        const btn = document.getElementById('pushBtn');
+        if (btn) { btn.textContent = '⏳ Pushing...'; btn.disabled = true; }
+        const code = await DB.Sync.push();
+        this.showAlert(`Pushed! Sync Code: ${code}`, 'success');
+        if (badge) { badge.textContent = '☁ Synced'; badge.className = 'sync-badge synced'; }
+        this.navigate('sync');
+      } else {
+        const code = document.getElementById('pull_code')?.value?.trim();
+        if (!code) { alert('Enter a Sync Code'); return; }
+        if (!confirm('This will replace ALL local data with cloud data. Are you sure?')) return;
+        await DB.Sync.pull(code);
+        this.showAlert('Data pulled from cloud!', 'success');
+        if (badge) { badge.textContent = '☁ Synced'; badge.className = 'sync-badge synced'; }
+        this.navigate('dashboard');
+      }
+    } catch (err) {
+      this.showAlert('Sync failed: ' + err.message, 'error');
+      if (badge) { badge.textContent = '☁ Sync'; badge.className = 'sync-badge'; }
+    }
+  },
+
+  copySyncCode() {
+    const code = DB.Sync.getSyncCode();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => this.showAlert('Sync code copied!', 'success'));
+  },
+
   showAlert(msg,type='success') {
     const ex=document.querySelector('.alert-toast'); if(ex) ex.remove();
     const el=document.createElement('div');
     el.className=`alert alert-${type} alert-toast`;
-    el.style.cssText='position:fixed;top:80px;right:20px;z-index:9999;min-width:220px;animation:slideIn 0.3s ease';
+    el.style.cssText='position:fixed;top:80px;right:20px;z-index:9999;min-width:220px;max-width:340px;animation:slideIn 0.3s ease';
     el.textContent=msg; document.body.appendChild(el);
-    setTimeout(()=>el.remove(),2800);
+    setTimeout(()=>el.remove(),3200);
   }
 };
 
