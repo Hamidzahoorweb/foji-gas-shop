@@ -1,4 +1,4 @@
-/* ===== FOJI GAS — STYLE ===== */
+/* ===== FOJI GAS — STYLE v3 ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -165,6 +165,22 @@ html, body {
   animation: pulse 2s infinite;
 }
 
+.sync-badge {
+  font-size: 11px;
+  color: var(--yellow);
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255,214,0,0.1);
+  border: 1px solid rgba(255,214,0,0.2);
+  transition: all 0.2s;
+}
+.sync-badge:hover { background: rgba(255,214,0,0.2); }
+.sync-badge.syncing { color: var(--flame); animation: pulse 1s infinite; }
+.sync-badge.synced { color: var(--green); }
+
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
 .content {
@@ -172,7 +188,7 @@ html, body {
   padding: 28px;
 }
 
-/* ===== CARDS ===== */
+/* ===== CARDS — always 2 columns on mobile ===== */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -236,6 +252,8 @@ html, body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .section-title {
@@ -261,6 +279,7 @@ html, body {
   transition: all 0.2s;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .btn-primary {
@@ -295,7 +314,7 @@ html, body {
   font-size: 11px;
 }
 
-/* ===== TABLE ===== */
+/* ===== TABLE — horizontal scroll on mobile ===== */
 .table-wrap {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -303,9 +322,17 @@ html, body {
   overflow: hidden;
 }
 
+/* This is the scroll container */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 520px; /* forces scroll on small screens */
 }
 
 thead {
@@ -328,6 +355,7 @@ td {
   font-size: 14px;
   border-top: 1px solid var(--border);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 tr:hover td { background: rgba(255,255,255,0.02); }
@@ -345,6 +373,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .tag-orange { background: rgba(255,107,0,0.15); color: var(--flame); }
 .tag-red { background: rgba(255,77,77,0.15); color: var(--red); }
 .tag-yellow { background: rgba(255,214,0,0.15); color: var(--yellow); }
+.tag-blue { background: rgba(30,144,255,0.15); color: #4db8ff; }
 
 /* ===== FORMS ===== */
 .form-grid {
@@ -394,6 +423,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   gap: 10px;
   margin-top: 20px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* ===== MODAL ===== */
@@ -520,6 +550,73 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   transition: width 0.5s ease;
 }
 
+/* ===== CYLINDER CARDS ===== */
+.cyl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cyl-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.cyl-card:hover { border-color: var(--flame); transform: translateY(-2px); }
+
+.cyl-card .cyl-icon { font-size: 28px; margin-bottom: 6px; }
+.cyl-card .cyl-id { font-family: 'Bebas Neue', sans-serif; font-size: 18px; color: var(--white); }
+.cyl-card .cyl-type { font-size: 10px; color: var(--silver-dim); text-transform: uppercase; letter-spacing: 1px; }
+.cyl-card .cyl-delete {
+  position: absolute; top: 6px; right: 6px;
+  background: rgba(255,77,77,0.15); border: none; border-radius: 6px;
+  color: var(--red); font-size: 12px; cursor: pointer; padding: 3px 6px;
+  transition: background 0.2s;
+}
+.cyl-card .cyl-delete:hover { background: rgba(255,77,77,0.35); }
+
+/* ===== SYNC PANEL ===== */
+.sync-panel {
+  background: rgba(255,214,0,0.05);
+  border: 1px solid rgba(255,214,0,0.15);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.sync-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--yellow);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sync-code-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sync-code {
+  font-family: monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--white);
+  background: rgba(255,255,255,0.08);
+  padding: 6px 16px;
+  border-radius: 8px;
+  letter-spacing: 4px;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .sidebar {
@@ -538,24 +635,53 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     display: block;
   }
 
+  /* ★ 2 cards per row on mobile ★ */
   .stats-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px;
   }
+
+  .stat-card {
+    padding: 14px 12px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+  }
+
+  .stat-icon { display: none; }
 
   .grid-2 {
     grid-template-columns: 1fr;
   }
 
   .content {
-    padding: 16px;
+    padding: 14px 12px;
   }
 
-  table { font-size: 12px; }
-  th, td { padding: 8px 10px; }
+  /* ★ Table horizontal scroll ★ */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 480px;
+  }
+
+  th, td { padding: 8px 10px; font-size: 12px; }
+
+  .topbar { padding: 12px 16px; }
+
+  .cyl-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 480px) {
-  .stats-grid { grid-template-columns: 1fr; }
+  /* Still 2 per row on very small phones */
+  .stats-grid { grid-template-columns: 1fr 1fr !important; }
+  .cyl-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ===== ALERTS ===== */
