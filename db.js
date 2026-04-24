@@ -61,8 +61,14 @@ const DB = {
     },
 
     getLogs() {
-      try { return JSON.parse(localStorage.getItem('fg_stock_logs')) || []; }
-      catch { return []; }
+      try {
+        let logs = JSON.parse(localStorage.getItem('fg_stock_logs')) || [];
+        // Ensure every log has an id (backward compat for old entries)
+        let changed = false;
+        logs = logs.map(l => { if (!l.id) { l.id = DB._id(); changed = true; } return l; });
+        if (changed) localStorage.setItem('fg_stock_logs', JSON.stringify(logs));
+        return logs;
+      } catch { return []; }
     },
 
     addLog(entry) {
@@ -241,5 +247,34 @@ const DB = {
   nowYM() {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  }
+};
+
+// ============================
+// PREVIOUS MONTH MANUAL
+// ============================
+DB.PrevMonth = {
+  KEY: 'fg_prev_months',
+  getAll() { try { return JSON.parse(localStorage.getItem(this.KEY)) || []; } catch { return []; } },
+  add(data) {
+    const all = this.getAll();
+    const rec = { id: DB._id(), createdAt: new Date().toISOString(), ...data };
+    all.unshift(rec);
+    localStorage.setItem(this.KEY, JSON.stringify(all));
+    return rec;
+  },
+  update(id, data) {
+    const all = this.getAll();
+    const idx = all.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      all[idx] = { ...all[idx], ...data, updatedAt: new Date().toISOString() };
+      localStorage.setItem(this.KEY, JSON.stringify(all));
+      return all[idx];
+    }
+    return null;
+  },
+  delete(id) {
+    const all = this.getAll().filter(r => r.id !== id);
+    localStorage.setItem(this.KEY, JSON.stringify(all));
   }
 };
